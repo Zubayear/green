@@ -31,7 +31,13 @@ public class ConsistentHashVerticle extends AbstractVerticle {
                     String name = jsonObject.getString("name");
                     String ip = jsonObject.getString("ip");
                     StorageNode storageNode = new StorageNode(name, ip);
-                    addNode(storageNode);
+                    try {
+                        addNode(storageNode);
+                    } catch (Exception e) {
+                        JsonObject response = new JsonObject()
+                                .put("msg", e.getMessage());
+                        msg.reply(response);
+                    }
                 }
                 JsonObject response = new JsonObject()
                         .put("msg", "server list added 🥳🎉");
@@ -42,7 +48,13 @@ public class ConsistentHashVerticle extends AbstractVerticle {
                     String name = jsonObject.getString("name");
                     String ip = jsonObject.getString("ip");
                     StorageNode storageNode = new StorageNode(name, ip);
-                    removeNode(storageNode);
+                    try {
+                        removeNode(storageNode);
+                    } catch (Exception e) {
+                        JsonObject response = new JsonObject()
+                                .put("msg", e.getMessage());
+                        msg.reply(response);
+                    }
                 }
                 JsonObject response = new JsonObject()
                         .put("msg", "server list removed 🥳🎉");

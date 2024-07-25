@@ -5,9 +5,14 @@ import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.auth.JWTOptions;
+import io.vertx.ext.auth.KeyStoreOptions;
+import io.vertx.ext.auth.jwt.JWTAuth;
+import io.vertx.ext.auth.jwt.JWTAuthOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.JWTAuthHandler;
 import io.vertx.kafka.client.producer.KafkaProducer;
 import io.vertx.kafka.client.producer.KafkaProducerRecord;
 
@@ -22,20 +27,51 @@ public class HttpServerVerticle extends AbstractVerticle {
 
 //        KafkaProducer<String, String> producer = KafkaProducer.create(vertx, kafkaConfig());
 
+        // Create the JWT Auth provider with a symmetric key
+        JWTAuthOptions config = new JWTAuthOptions()
+                .setKeyStore(new KeyStoreOptions()
+                        .setPath("keystore.jceks")
+                        .setType("jceks")
+                        .setPassword("secret"));
+
+        JWTAuth jwtAuth = JWTAuth.create(vertx, config);
+
         HttpServer httpServer = vertx.createHttpServer();
         Router router = Router.router(vertx);
 
         router.route().handler(BodyHandler.create());
 
+
         // routing
         router.get("/health")
                 .handler(this::healthHandler);
+
         router.get("/which-shard")
+                .handler(JWTAuthHandler.create(jwtAuth))
+                .failureHandler(ctx -> ctx.response().setStatusCode(401)
+                        .end(new JsonObject()
+                                .put("msg", "Unauthorized access, please provide a valid token.")
+                                .encode()))
                 .handler(this::shardHandler);
+
         router.post("/send/sms")
+                .handler(JWTAuthHandler.create(jwtAuth))
+                .failureHandler(ctx -> ctx.response().setStatusCode(401)
+                        .end(new JsonObject()
+                                .put("msg", "Unauthorized access, please provide a valid token.")
+                                .encode()))
                 .handler(this::smsHandler);
+
         router.post("/consistent-hash/servers")
+                .handler(JWTAuthHandler.create(jwtAuth))
+                .failureHandler(ctx -> ctx.response().setStatusCode(401)
+                        .end(new JsonObject()
+                                .put("msg", "Unauthorized access, please provide a valid token.")
+                                .encode()))
                 .handler(this::consistentHandler);
+
+        router.post("/auth/token")
+                .handler(routingContext -> tokenHandler(routingContext, jwtAuth));
 
 
         httpServer.requestHandler(router)
@@ -47,6 +83,22 @@ public class HttpServerVerticle extends AbstractVerticle {
                         startPromise.fail(http.cause());
                     }
                 });
+    }
+
+    private void tokenHandler(RoutingContext routingContext, JWTAuth jwtAuth) {
+        JsonObject requestBody = routingContext.body().asJsonObject();
+        String username = requestBody.getString("username");
+        String password = requestBody.getString("password");
+        if (!"apocalypse".equals(username) || !"password".equals(password)) {
+            routingContext.response()
+                    .putHeader("content-type", "application/json")
+                    .end(new JsonObject().put("msg", "invalid username or password").encode());
+            return;
+        }
+        String token = jwtAuth.generateToken(new JsonObject().put("sub", "user"), new JWTOptions().setExpiresInSeconds(3600));
+        routingContext.response()
+                .putHeader("content-type", "application/json")
+                .end(new JsonObject().put("token", token).encode());
     }
 
     private void shardHandler(RoutingContext routingContext) {
